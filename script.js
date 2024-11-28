@@ -5,24 +5,67 @@ let win = 0;
 let lose = 0;
 let draw = 0;
 let games = 0; // 試合回数
-let scoreHistory = [];
+let hundredGameStats = []; // 100試合ごとの記録を保存
 
-// コンピュータの手をランダムに選ぶ関数
+// ランダムにコンピュータの手を選ぶ関数
 function randomMove() {
     const moves = ["グー", "チョキ", "パー"];
     return moves[Math.floor(Math.random() * moves.length)];
 }
 
-// マルコフ連鎖と頻度分析を利用したコンピュータの手を決める関数
+// コンピュータの手を決定するロジック
 function decideComputerMove(moves, order = 5) {
     if (moves.length < order) {
         return randomMove();
     }
+
+    const predictedMove = predictNextMove(moves, order);
     const counterMoves = { "グー": "パー", "チョキ": "グー", "パー": "チョキ" };
-    return counterMoves[randomMove()];
+    return counterMoves[predictedMove] || randomMove();
 }
 
-// 勝敗を判定する関数
+// マルコフ連鎖で次の手を予測
+function predictNextMove(moves, order) {
+    const state = moves.slice(-order).join(",");
+    const transitionMatrix = buildTransitionMatrix(moves, order);
+
+    if (transitionMatrix[state]) {
+        const nextMoves = transitionMatrix[state];
+        let maxMove = null;
+        let maxCount = -1;
+
+        for (const move in nextMoves) {
+            if (nextMoves[move] > maxCount) {
+                maxMove = move;
+                maxCount = nextMoves[move];
+            }
+        }
+
+        return maxMove;
+    } else {
+        return randomMove(); // データが不足している場合はランダム
+    }
+}
+
+// 遷移行列を構築
+function buildTransitionMatrix(moves, order) {
+    const transitionMatrix = {};
+
+    for (let i = 0; i < moves.length - order; i++) {
+        const state = moves.slice(i, i + order).join(",");
+        const nextMove = moves[i + order];
+
+        if (!transitionMatrix[state]) {
+            transitionMatrix[state] = { "グー": 0, "チョキ": 0, "パー": 0 };
+        }
+
+        transitionMatrix[state][nextMove]++;
+    }
+
+    return transitionMatrix;
+}
+
+// 勝敗の判定
 function judge(player, computer) {
     if (player === computer) {
         return "draw";
@@ -37,10 +80,38 @@ function judge(player, computer) {
     }
 }
 
-// ゲームをプレイする関数
+// 履歴の更新
+function updateMoveHistory(playerMove, computerMove) {
+    const historyList = document.getElementById("history-list");
+    const entry = document.createElement("div");
+    entry.textContent = `プレイヤー: ${playerMove}, コンピュータ: ${computerMove}`;
+    historyList.appendChild(entry);
+
+    // 履歴が多すぎたら古いものを削除
+    if (historyList.childNodes.length > 20) {
+        historyList.removeChild(historyList.firstChild);
+    }
+}
+
+// スコアの記録を保存
+function saveStatsEvery100Games() {
+    if (games % 100 === 0) {
+        hundredGameStats.push({
+            gameNumber: games,
+            win,
+            lose,
+            draw,
+        });
+        console.log(`100試合ごとの統計:`, hundredGameStats);
+    }
+}
+
+// ゲームの進行
 function playGame(playerMove) {
     const computerMove = decideComputerMove(moves);
     const result = judge(playerMove, computerMove);
+
+    updateMoveHistory(playerMove, computerMove);
 
     moves.push(playerMove);
     history.push(result);
@@ -54,12 +125,9 @@ function playGame(playerMove) {
         draw++;
     }
 
-    // スコアを100回ごとに記録
-    if (games % 100 === 0) {
-        scoreHistory.push({ games, win, lose, draw });
-        updateScoreHistory();
-    }
+    saveStatsEvery100Games();
 
+    // スコアの表示更新
     document.getElementById("player-move").textContent = playerMove;
     document.getElementById("computer-move").textContent = computerMove;
     document.getElementById("result").textContent = result;
@@ -69,18 +137,7 @@ function playGame(playerMove) {
     document.getElementById("games-count").textContent = games;
 }
 
-// スコア履歴を更新する関数
-function updateScoreHistory() {
-    const scoreList = document.getElementById("score-history");
-    scoreList.innerHTML = "";
-    scoreHistory.forEach(score => {
-        const li = document.createElement("li");
-        li.textContent = `試合数: ${score.games}, 勝ち: ${score.win}, 負け: ${score.lose}, 引き分け: ${score.draw}`;
-        scoreList.appendChild(li);
-    });
-}
-
-// ゲームをリセットする関数
+// ゲームのリセット
 function resetGame() {
     moves = [];
     history = [];
@@ -88,7 +145,6 @@ function resetGame() {
     lose = 0;
     draw = 0;
     games = 0;
-    scoreHistory = [];
 
     document.getElementById("player-move").textContent = "";
     document.getElementById("computer-move").textContent = "";
@@ -97,10 +153,11 @@ function resetGame() {
     document.getElementById("lose-count").textContent = lose;
     document.getElementById("draw-count").textContent = draw;
     document.getElementById("games-count").textContent = games;
-    document.getElementById("score-history").innerHTML = "";
+
+    document.getElementById("history-list").innerHTML = "";
 }
 
-// イベントリスナーを設定
+// イベントリスナーの登録
 document.getElementById("rock").addEventListener("click", () => playGame("グー"));
 document.getElementById("scissors").addEventListener("click", () => playGame("チョキ"));
 document.getElementById("paper").addEventListener("click", () => playGame("パー"));
