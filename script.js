@@ -5,26 +5,27 @@ let win = 0;
 let lose = 0;
 let draw = 0;
 let games = 0; // 試合回数
-let hundredGameStats = []; // 100試合ごとの記録を保存
+let recordHistory = []; // 100回ごとの記録を保存
 
-// ランダムにコンピュータの手を選ぶ関数
+// コンピューターの手を予測する関数群
 function randomMove() {
     const moves = ["グー", "チョキ", "パー"];
     return moves[Math.floor(Math.random() * moves.length)];
 }
 
-// コンピュータの手を決定するロジック
-function decideComputerMove(moves, order = 5) {
-    if (moves.length < order) {
-        return randomMove();
+function buildTransitionMatrix(moves, order) {
+    const transitionMatrix = {};
+    for (let i = 0; i < moves.length - order; i++) {
+        const state = moves.slice(i, i + order).join(",");
+        const nextMove = moves[i + order];
+        if (!transitionMatrix[state]) {
+            transitionMatrix[state] = { "グー": 0, "チョキ": 0, "パー": 0 };
+        }
+        transitionMatrix[state][nextMove]++;
     }
-
-    const predictedMove = predictNextMove(moves, order);
-    const counterMoves = { "グー": "パー", "チョキ": "グー", "パー": "チョキ" };
-    return counterMoves[predictedMove] || randomMove();
+    return transitionMatrix;
 }
 
-// マルコフ連鎖で次の手を予測
 function predictNextMove(moves, order) {
     const state = moves.slice(-order).join(",");
     const transitionMatrix = buildTransitionMatrix(moves, order);
@@ -33,39 +34,56 @@ function predictNextMove(moves, order) {
         const nextMoves = transitionMatrix[state];
         let maxMove = null;
         let maxCount = -1;
-
         for (const move in nextMoves) {
             if (nextMoves[move] > maxCount) {
                 maxMove = move;
                 maxCount = nextMoves[move];
             }
         }
-
         return maxMove;
     } else {
-        return randomMove(); // データが不足している場合はランダム
+        return randomMove(); // データがない場合はランダムに手を選択
     }
 }
 
-// 遷移行列を構築
-function buildTransitionMatrix(moves, order) {
-    const transitionMatrix = {};
-
-    for (let i = 0; i < moves.length - order; i++) {
-        const state = moves.slice(i, i + order).join(",");
-        const nextMove = moves[i + order];
-
-        if (!transitionMatrix[state]) {
-            transitionMatrix[state] = { "グー": 0, "チョキ": 0, "パー": 0 };
+function predictMoveByFrequency(moves) {
+    const moveCounts = { "グー": 0, "チョキ": 0, "パー": 0 };
+    for (const move of moves) {
+        moveCounts[move]++;
+    }
+    let maxMove = null;
+    let maxCount = -1;
+    for (const move in moveCounts) {
+        if (moveCounts[move] > maxCount) {
+            maxMove = move;
+            maxCount = moveCounts[move];
         }
-
-        transitionMatrix[state][nextMove]++;
     }
-
-    return transitionMatrix;
+    return maxMove || randomMove();
 }
 
-// 勝敗の判定
+function decideComputerMove(moves, order = 5) {
+    console.log("プレイヤーの過去の手:", moves);
+    
+    if (moves.length < order) {
+        console.log("履歴が短すぎます。ランダムな手を出します。");
+        return randomMove();
+    }
+    
+    const predictedMoveByMarkov = predictNextMove(moves, order);
+    const predictedMoveByFrequency = predictMoveByFrequency(moves);
+
+    const predictedMove = predictedMoveByMarkov || predictedMoveByFrequency;
+    const counterMoves = { "グー": "パー", "チョキ": "グー", "パー": "チョキ" };
+    const computerMove = counterMoves[predictedMove];
+
+    console.log("予測された次の手:", predictedMove);
+    console.log("コンピュータの手:", computerMove);
+    
+    return computerMove || randomMove();
+}
+
+// ジャンケンゲームロジック
 function judge(player, computer) {
     if (player === computer) {
         return "draw";
@@ -80,38 +98,9 @@ function judge(player, computer) {
     }
 }
 
-// 履歴の更新
-function updateMoveHistory(playerMove, computerMove) {
-    const historyList = document.getElementById("history-list");
-    const entry = document.createElement("div");
-    entry.textContent = `プレイヤー: ${playerMove}, コンピュータ: ${computerMove}`;
-    historyList.appendChild(entry);
-
-    // 履歴が多すぎたら古いものを削除
-    if (historyList.childNodes.length > 20) {
-        historyList.removeChild(historyList.firstChild);
-    }
-}
-
-// スコアの記録を保存
-function saveStatsEvery100Games() {
-    if (games % 100 === 0) {
-        hundredGameStats.push({
-            gameNumber: games,
-            win,
-            lose,
-            draw,
-        });
-        console.log(`100試合ごとの統計:`, hundredGameStats);
-    }
-}
-
-// ゲームの進行
 function playGame(playerMove) {
-    const computerMove = decideComputerMove(moves);
+    const computerMove = decideComputerMove(moves); // コンピューターの手を決定
     const result = judge(playerMove, computerMove);
-
-    updateMoveHistory(playerMove, computerMove);
 
     moves.push(playerMove);
     history.push(result);
@@ -125,9 +114,6 @@ function playGame(playerMove) {
         draw++;
     }
 
-    saveStatsEvery100Games();
-
-    // スコアの表示更新
     document.getElementById("player-move").textContent = playerMove;
     document.getElementById("computer-move").textContent = computerMove;
     document.getElementById("result").textContent = result;
@@ -135,9 +121,24 @@ function playGame(playerMove) {
     document.getElementById("lose-count").textContent = lose;
     document.getElementById("draw-count").textContent = draw;
     document.getElementById("games-count").textContent = games;
+
+    // 100回ごとに記録を保存
+    if (games % 100 === 0) {
+        recordHistory.push({
+            games: games,
+            wins: win,
+            losses: lose,
+            draws: draw
+        });
+
+        // 記録を画面に追加
+        const recordList = document.getElementById("record-list");
+        const recordItem = document.createElement("li");
+        recordItem.textContent = `${games}回終了: 勝ち${win}, 負け${lose}, 引き分け${draw}`;
+        recordList.appendChild(recordItem);
+    }
 }
 
-// ゲームのリセット
 function resetGame() {
     moves = [];
     history = [];
@@ -145,6 +146,7 @@ function resetGame() {
     lose = 0;
     draw = 0;
     games = 0;
+    recordHistory = []; // 記録もリセット
 
     document.getElementById("player-move").textContent = "";
     document.getElementById("computer-move").textContent = "";
@@ -154,10 +156,11 @@ function resetGame() {
     document.getElementById("draw-count").textContent = draw;
     document.getElementById("games-count").textContent = games;
 
-    document.getElementById("history-list").innerHTML = "";
+    // 記録リストをリセット
+    const recordList = document.getElementById("record-list");
+    recordList.innerHTML = "";
 }
 
-// イベントリスナーの登録
 document.getElementById("rock").addEventListener("click", () => playGame("グー"));
 document.getElementById("scissors").addEventListener("click", () => playGame("チョキ"));
 document.getElementById("paper").addEventListener("click", () => playGame("パー"));
